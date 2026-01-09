@@ -91,6 +91,8 @@ export const api = {
       path: "/api/feedback/admin/analytics/:staffId",
       responses: {
         200: z.array(z.object({
+          staffId: z.number().optional(),
+          staffName: z.string().optional(),
           batchId: z.string(),
           totalRespondents: z.number(),
           batchStrength: z.number(),
@@ -142,6 +144,7 @@ export const api = {
         staff_id: z.number(),
         batch_id: z.string(),
         subject_id: z.number(),
+        remarks: z.string().optional(),
       })),
       responses: {
         200: z.object({

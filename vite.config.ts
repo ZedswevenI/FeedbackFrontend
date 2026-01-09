@@ -12,12 +12,6 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    proxy: {
-      '/api/feedback': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-    },
   },
   preview: {
     port: process.env.PORT ? parseInt(process.env.PORT) : 4173,

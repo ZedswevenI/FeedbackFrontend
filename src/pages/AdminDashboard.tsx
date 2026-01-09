@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, getToken } from "@/hooks/use-auth";
 import { useAdminMetadata, useAnalytics } from "@/hooks/use-admin";
 import { useSchedules } from "@/hooks/use-schedules";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LogOut, CalendarRange, FileText, Download, ChevronLeft, ChevronRight, Edit } from "lucide-react";
+import { LogOut, CalendarRange, FileText, Download, ChevronLeft, ChevronRight, Edit, FileSpreadsheet } from "lucide-react";
 import { CreateScheduleDialog } from "@/components/CreateScheduleDialog";
 import { EditScheduleDialog } from "@/components/EditScheduleDialog";
 import { useToast } from "@/hooks/use-toast";
-import { getToken } from "@/hooks/use-auth";
+import { buildUrl } from "@shared/routes";
+import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -22,6 +23,7 @@ export default function AdminDashboard() {
   const [selectedBatchId, setSelectedBatchId] = useState<string>("all");
   const [selectedPhase, setSelectedPhase] = useState<string>("all");
   const [selectedSubject, setSelectedSubject] = useState<string>("all");
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("all");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -37,8 +39,13 @@ export default function AdminDashboard() {
   const itemsPerPage = 10;
   const { toast } = useToast();
   
-  const { data: analytics, refetch: refetchAnalytics } = useAnalytics(Number(selectedStaffId), { 
-    batchId: selectedBatchId 
+  const { data: analytics, refetch: refetchAnalytics } = useAnalytics(selectedStaffId, { 
+    batchId: selectedBatchId,
+    phase: selectedPhase,
+    subjectId: selectedSubject,
+    templateId: selectedTemplate,
+    fromDate: fromDate,
+    toDate: toDate
   });
 
   const handleSearch = () => {
@@ -53,9 +60,11 @@ export default function AdminDashboard() {
     setSelectedBatchId("all");
     setSelectedPhase("all");
     setSelectedSubject("all");
+    setSelectedTemplate("all");
     setFromDate("");
     setToDate("");
     setShowAnalytics(false);
+    refetchAnalytics();
   };
 
   const handleScheduleReset = () => {
@@ -72,7 +81,8 @@ export default function AdminDashboard() {
   const handleToggleSchedule = async (scheduleId: number, currentStatus: boolean) => {
     try {
       const token = getToken();
-      const url = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}/api/feedback/admin/schedules/${scheduleId}/toggle`;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+      const url = `${baseUrl}/api/feedback/admin/schedules/${scheduleId}/toggle`;
       const response = await fetch(url, {
         method: 'PUT',
         headers: {
@@ -128,7 +138,7 @@ export default function AdminDashboard() {
 
   // Filter staff based on selected filters
   const filteredStaff = metadata?.staff?.filter((s: any) => {
-    if (selectedBatchId === 'all' && selectedPhase === 'all' && selectedSubject === 'all') {
+    if (selectedBatchId === 'all' && selectedPhase === 'all' && selectedSubject === 'all' && selectedTemplate === 'all') {
       return true;
     }
     const staffSchedules = schedules?.filter((sch: any) => {
@@ -143,15 +153,72 @@ export default function AdminDashboard() {
       const batchMatch = selectedBatchId === 'all' || sch.batch === selectedBatchId;
       const phaseMatch = selectedPhase === 'all' || sch.phase === selectedPhase;
       const subjectMatch = selectedSubject === 'all' || String(sch.subjectId) === selectedSubject;
-      return batchMatch && phaseMatch && subjectMatch;
+      const templateMatch = selectedTemplate === 'all' || String(sch.templateId) === selectedTemplate;
+      return batchMatch && phaseMatch && subjectMatch && templateMatch;
     });
   }) || [];
 
+  const handleExportExcel = () => {
+    if (!selectedStaffId || !analytics || analytics.length === 0) return;
+    const staffName = selectedStaffId === "all" ? "All Staff" : metadata?.staff.find((s: any) => s.id === Number(selectedStaffId))?.name || 'Staff';
+    
+    const formatDate = (dateStr: string) => {
+      if (!dateStr || dateStr === 'N/A') return 'N/A';
+      const date = new Date(dateStr);
+      const day = date.getDate();
+      const month = date.toLocaleString('en-US', { month: 'short' });
+      const year = date.getFullYear();
+      return `${day}-${month}-${year}`;
+    };
+
+    // Find max questions for column headers
+    const maxPartA = Math.max(...analytics.map((a: any) => a.questionStats?.filter((q: any) => q.section === 'Part A').length || 0));
+    const maxPartB = Math.max(...analytics.map((a: any) => a.questionStats?.filter((q: any) => q.section === 'Part B').length || 0));
+
+    const excelData = analytics.map((batchAnalytics: any) => {
+      const batchSchedule = schedules?.find((s: any) => 
+        (selectedStaffId === "all" || s.staffId === Number(selectedStaffId)) && 
+        s.batch === batchAnalytics.batchId
+      );
+      const scheduleDate = batchSchedule?.startDate ? formatDate(batchSchedule.startDate) : 'N/A';
+      const row: any = {
+        'Staff': selectedStaffId === "all" ? batchAnalytics.staffName : staffName,
+        'Batch': batchAnalytics.batchId,
+        'Phase': batchAnalytics.phase || 'N/A',
+        'Date': scheduleDate,
+        'Template': batchAnalytics.templateName || 'N/A',
+        'Batch Strength': batchAnalytics.batchStrength || 0,
+        'Responses': batchAnalytics.totalRespondents || 0,
+      };
+      
+      const partAQuestions = batchAnalytics.questionStats?.filter((q: any) => q.section === 'Part A') || [];
+      const partBQuestions = batchAnalytics.questionStats?.filter((q: any) => q.section === 'Part B') || [];
+      
+      for (let i = 0; i < maxPartA; i++) {
+        row[`A${i + 1}`] = partAQuestions[i] ? partAQuestions[i].averageMarks.toFixed(2) : '';
+      }
+      
+      for (let i = 0; i < maxPartB; i++) {
+        row[`B${i + 1}`] = partBQuestions[i] ? partBQuestions[i].averageMarks.toFixed(2) : '';
+      }
+      
+      row['TEA%'] = ((batchAnalytics.partAAverage || 0) / 10 * 100).toFixed(1) + '%';
+      row['REA%'] = ((batchAnalytics.partBAverage || 0) / 10 * 100).toFixed(1) + '%';
+      
+      return row;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Feedback Report');
+    XLSX.writeFile(wb, `Feedback_Report_${staffName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   const handleExportPDF = () => {
     if (!selectedStaffId || !analytics || analytics.length === 0) return;
-    const staffName = metadata?.staff.find((s: any) => s.id === Number(selectedStaffId))?.name || 'Staff';
+    const staffName = selectedStaffId === "all" ? "All Staff" : metadata?.staff.find((s: any) => s.id === Number(selectedStaffId))?.name || 'Staff';
     const relevantSchedules = schedules?.filter((s: any) => 
-      s.staffId === Number(selectedStaffId) && 
+      (selectedStaffId === "all" || s.staffId === Number(selectedStaffId)) && 
       (selectedBatchId === 'all' || s.batch === selectedBatchId)
     ) || [];
     
@@ -172,16 +239,59 @@ export default function AdminDashboard() {
     const avgTeaching = (analytics.reduce((sum: number, b: any) => sum + (b.partAAverage || 0), 0) / analytics.length) / 10 * 100;
     const avgResearch = (analytics.reduce((sum: number, b: any) => sum + (b.partBAverage || 0), 0) / analytics.length) / 10 * 100;
     const tableRows = analytics.map((batchAnalytics: any) => {
-      const batchSchedule = schedules?.find((s: any) => s.staffId === Number(selectedStaffId) && s.batch === batchAnalytics.batchId);
+      const batchSchedule = schedules?.find((s: any) => 
+        (selectedStaffId === "all" || s.staffId === Number(selectedStaffId)) && 
+        s.batch === batchAnalytics.batchId
+      );
       const scheduleDate = batchSchedule?.startDate ? formatDate(batchSchedule.startDate) : 'N/A';
       const templateName = batchAnalytics.templateName || 'N/A';
-      return `<tr><td>${batchAnalytics.batchId}</td><td>${batchAnalytics.phase||'N/A'}</td><td>${scheduleDate}</td><td>${templateName}</td><td>${batchAnalytics.batchStrength||0}</td><td>${batchAnalytics.totalRespondents||0}</td>${batchAnalytics.questionStats?.filter((q:any)=>q.section==='Part A'||!q.section).map((q:any)=>`<td>${q.averageMarks.toFixed(2)}</td>`).join('')}${batchAnalytics.questionStats?.filter((q:any)=>q.section==='Part B').map((q:any)=>`<td>${q.averageMarks.toFixed(2)}</td>`).join('')}<td style="font-weight:700;color:#16a34a">${((batchAnalytics.partAAverage||0)/10*100).toFixed(1)}%</td><td style="font-weight:700;color:#2563eb">${((batchAnalytics.partBAverage||0)/10*100).toFixed(1)}%</td></tr>`;
+      const staffCol = selectedStaffId === "all" ? `<td>${batchAnalytics.staffName||'N/A'}</td>` : '';
+      return `<tr>${staffCol}<td>${batchAnalytics.batchId}</td><td>${batchAnalytics.phase||'N/A'}</td><td>${scheduleDate}</td><td>${templateName}</td><td>${batchAnalytics.batchStrength||0}</td><td>${batchAnalytics.totalRespondents||0}</td>${batchAnalytics.questionStats?.filter((q:any)=>q.section==='Part A'||!q.section).map((q:any)=>`<td>${q.averageMarks.toFixed(2)}</td>`).join('')}${batchAnalytics.questionStats?.filter((q:any)=>q.section==='Part B').map((q:any)=>`<td>${q.averageMarks.toFixed(2)}</td>`).join('')}<td style="font-weight:700;color:#16a34a">${((batchAnalytics.partAAverage||0)/10*100).toFixed(1)}%</td><td style="font-weight:700;color:#2563eb">${((batchAnalytics.partBAverage||0)/10*100).toFixed(1)}%</td></tr>`;
     }).join('');
+    
+    const staffHeader = selectedStaffId === "all" ? '<th>Staff</th>' : '';
     
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    printWindow.document.write(`<!DOCTYPE html><html><head><title>Feedback Report - ${staffName}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;padding:40px;color:#333;line-height:1.6;background:#fff}.header{text-align:center;margin-bottom:30px;padding-bottom:15px;border-bottom:3px solid #dc2626}h1{font-size:24px;color:#dc2626;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}.subtitle{color:#555;font-size:13px;margin-bottom:3px;font-weight:500}.date-info{color:#777;font-size:11px;font-style:italic}table{width:100%;border-collapse:collapse;margin:25px 0;font-size:11px;box-shadow:0 0 20px rgba(0,0,0,0.1)}thead tr{background:#dc2626!important;color:#fff!important}th{padding:12px 8px;text-align:center;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid rgba(255,255,255,0.3);background:#dc2626!important;color:#fff!important}th:last-child{border-right:none}tbody tr{background:#fff;border-bottom:1px solid #ddd}tbody tr:nth-child(even){background:#f9f9f9}tbody tr:hover{background:#f5f5f5}td{padding:10px 8px;text-align:center;border-right:1px solid #e0e0e0;font-size:11px}td:last-child{border-right:none}td:first-child{font-weight:600;color:#dc2626;text-align:left;padding-left:12px}.summary{margin-top:30px;padding:15px 20px;background:#fff;border:2px solid #dc2626;border-radius:4px}.summary-title{font-size:14px;font-weight:700;margin-bottom:8px;color:#dc2626;text-transform:uppercase}.summary-text{font-size:12px;color:#555;line-height:1.8}@media print{body{padding:15px}table{font-size:10px}th,td{padding:8px 6px}thead tr{background:#dc2626!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>Consolidated Feedback Report</h1><p class="subtitle">Staff: ${staffName} | Batch: ${selectedBatchId==='all'?'All Batches':selectedBatchId}</p><p class="date-info">Feedback Period: ${dateRange}</p></div><table><thead><tr><th>Batch</th><th>Phase</th><th>Date</th><th>Template</th><th>Strength</th><th>Responses</th>${firstBatch.questionStats?.filter((q:any)=>q.section==='Part A'||!q.section).map((_:any,i:number)=>`<th>A${i+1}</th>`).join('')}${firstBatch.questionStats?.filter((q:any)=>q.section==='Part B').map((_:any,i:number)=>`<th>B${i+1}</th>`).join('')}<th>TEA%</th><th>REA%</th></tr></thead><tbody>${tableRows}</tbody></table><div class="summary"><div class="summary-title">Summary</div><div class="summary-text">Overall teaching effectiveness: <strong style="color:#16a34a">${avgTeaching.toFixed(1)}%</strong> | Research effectiveness: <strong style="color:#2563eb">${avgResearch.toFixed(1)}%</strong></div></div><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`);
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>Feedback Report - ${staffName}</title><style>@page{size:landscape;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;padding:20px;color:#333;line-height:1.4;background:#fff}.header{text-align:center;margin-bottom:20px;padding-bottom:10px;border-bottom:3px solid #dc2626}h1{font-size:20px;color:#dc2626;font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px}.subtitle{color:#555;font-size:11px;margin-bottom:2px;font-weight:500}.date-info{color:#777;font-size:9px;font-style:italic}table{width:100%;border-collapse:collapse;margin:15px 0;font-size:9px;box-shadow:0 0 10px rgba(0,0,0,0.1)}thead tr{background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{padding:8px 4px;text-align:center;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.3px;border-right:1px solid rgba(255,255,255,0.3);background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th:last-child{border-right:none}tbody tr{background:#fff;border-bottom:1px solid #ddd}tbody tr:nth-child(even){background:#f9f9f9;-webkit-print-color-adjust:exact;print-color-adjust:exact}td{padding:6px 4px;text-align:center;border-right:1px solid #e0e0e0;font-size:9px}td:last-child{border-right:none}td:first-child{font-weight:600;color:#dc2626;text-align:left;padding-left:8px}.summary{margin-top:15px;padding:10px 15px;background:#fff;border:2px solid #dc2626;border-radius:4px}.summary-title{font-size:12px;font-weight:700;margin-bottom:6px;color:#dc2626;text-transform:uppercase}.summary-text{font-size:10px;color:#555;line-height:1.6}@media print{@page{size:landscape;margin:10mm}body{padding:10px}table{font-size:8px;page-break-inside:auto}tr{page-break-inside:avoid;page-break-after:auto}th,td{padding:5px 3px}thead{display:table-header-group}thead tr{background:#dc2626!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>Consolidated Feedback Report</h1><p class="subtitle">Staff: ${staffName} | Batch: ${selectedBatchId==='all'?'All Batches':selectedBatchId}</p><p class="date-info">Feedback Period: ${dateRange}</p></div><table><thead><tr>${staffHeader}<th>Batch</th><th>Phase</th><th>Date</th><th>Template</th><th>Strength</th><th>Responses</th>${firstBatch.questionStats?.filter((q:any)=>q.section==='Part A'||!q.section).map((_:any,i:number)=>`<th>A${i+1}</th>`).join('')}${firstBatch.questionStats?.filter((q:any)=>q.section==='Part B').map((_:any,i:number)=>`<th>B${i+1}</th>`).join('')}<th>TEA%</th><th>REA%</th></tr></thead><tbody>${tableRows}</tbody></table><div class="summary"><div class="summary-title">Summary</div><div class="summary-text">Overall teaching effectiveness: <strong style="color:#16a34a">${avgTeaching.toFixed(1)}%</strong> | Research effectiveness: <strong style="color:#2563eb">${avgResearch.toFixed(1)}%</strong></div></div><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`);
     printWindow.document.close();
+  };
+
+  const handleExportRemarks = async () => {
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+      const token = getToken();
+      const staffParam = selectedStaffId && selectedStaffId !== 'all' ? selectedStaffId : '0';
+      const batchParam = selectedBatchId || 'all';
+      const url = `${baseUrl}/api/feedback/admin/remarks/export?staffId=${staffParam}&batchId=${batchParam}`;
+      
+      const response = await fetch(url, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      
+      if (!response.ok) throw new Error('Failed to export remarks');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `staff_remarks_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast({
+        title: "Success",
+        description: "Remarks report downloaded successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download remarks report",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -233,11 +343,11 @@ export default function AdminDashboard() {
                 
                 <div className="space-y-6">
                   {/* Primary Filters Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Batch</label>
+                      <label htmlFor="analytics-batch" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Batch</label>
                       <Select onValueChange={setSelectedBatchId} value={selectedBatchId}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="analytics-batch" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Batches" />
                         </SelectTrigger>
                         <SelectContent>
@@ -250,9 +360,9 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Phase</label>
+                      <label htmlFor="analytics-phase" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Phase</label>
                       <Select onValueChange={setSelectedPhase} value={selectedPhase}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="analytics-phase" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Phases" />
                         </SelectTrigger>
                         <SelectContent>
@@ -265,9 +375,9 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subject</label>
+                      <label htmlFor="analytics-subject" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subject</label>
                       <Select onValueChange={setSelectedSubject} value={selectedSubject}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="analytics-subject" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Subjects" />
                         </SelectTrigger>
                         <SelectContent>
@@ -280,12 +390,28 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Staff Member</label>
+                      <label htmlFor="analytics-template" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Template</label>
+                      <Select onValueChange={setSelectedTemplate} value={selectedTemplate}>
+                        <SelectTrigger id="analytics-template" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                          <SelectValue placeholder="All Templates" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Templates</SelectItem>
+                          {metadata?.templates?.map((t: { id: number; name: string }) => (
+                            <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label htmlFor="analytics-staff" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Staff Member</label>
                       <Select onValueChange={setSelectedStaffId} value={selectedStaffId}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="analytics-staff" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="Select staff" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="all">All Staff</SelectItem>
                           {filteredStaff.map((s: { id: number; name: string }) => (
                             <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                           ))}
@@ -297,8 +423,9 @@ export default function AdminDashboard() {
                   {/* Date Range Row */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">From Date</label>
+                      <label htmlFor="analytics-from-date" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">From Date</label>
                       <Input
+                        id="analytics-from-date"
                         type="date"
                         value={fromDate}
                         onChange={(e) => setFromDate(e.target.value)}
@@ -306,8 +433,9 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">To Date</label>
+                      <label htmlFor="analytics-to-date" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">To Date</label>
                       <Input
+                        id="analytics-to-date"
                         type="date"
                         value={toDate}
                         onChange={(e) => setToDate(e.target.value)}
@@ -360,6 +488,7 @@ export default function AdminDashboard() {
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-600 hover:to-red-700">
+                              {selectedStaffId === "all" && <TableHead className="text-white font-bold py-4 px-6 text-left">Staff</TableHead>}
                               <TableHead className="text-white font-bold py-4 px-6 text-left">Batch</TableHead>
                               <TableHead className="text-white font-bold py-4 px-4 text-center">Phase</TableHead>
                               <TableHead className="text-white font-bold py-4 px-4 text-center">Date</TableHead>
@@ -378,11 +507,12 @@ export default function AdminDashboard() {
                           </TableHeader>
                           <TableBody>
                             {analytics.map((batchAnalytics: any, index: number) => (
-                              <TableRow key={batchAnalytics.batchId} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-blue-50 transition-colors`}>
+                              <TableRow key={`${batchAnalytics.staffId || ''}-${batchAnalytics.batchId}`} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-blue-50 transition-colors`}>
+                                {selectedStaffId === "all" && <TableCell className="font-semibold text-gray-800 py-4 px-6">{batchAnalytics.staffName || 'N/A'}</TableCell>}
                                 <TableCell className="font-bold text-red-700 py-4 px-6">{batchAnalytics.batchId}</TableCell>
                                 <TableCell className="text-center py-4 px-4 font-medium">{batchAnalytics.phase || 'N/A'}</TableCell>
-                                <TableCell className="text-center py-4 px-4 text-sm">{schedules?.find((s: any) => s.staffId === Number(selectedStaffId) && s.batch === batchAnalytics.batchId)?.startDate ? (() => {
-                                  const dateStr = schedules.find((s: any) => s.staffId === Number(selectedStaffId) && s.batch === batchAnalytics.batchId)?.startDate;
+                                <TableCell className="text-center py-4 px-4 text-sm">{schedules?.find((s: any) => (selectedStaffId === "all" ? s.staffId === batchAnalytics.staffId : s.staffId === Number(selectedStaffId)) && s.batch === batchAnalytics.batchId)?.startDate ? (() => {
+                                  const dateStr = schedules.find((s: any) => (selectedStaffId === "all" ? s.staffId === batchAnalytics.staffId : s.staffId === Number(selectedStaffId)) && s.batch === batchAnalytics.batchId)?.startDate;
                                   const date = new Date(dateStr);
                                   return `${date.getDate()}-${date.toLocaleString('en-US', { month: 'short' })}-${date.getFullYear()}`;
                                 })() : 'N/A'}</TableCell>
@@ -426,13 +556,29 @@ export default function AdminDashboard() {
                             </div>
                           </div>
                         </div>
-                        <Button 
-                          onClick={handleExportPDF} 
-                          className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 h-auto font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
-                        >
-                          <Download className="h-5 w-5 mr-2" />
-                          Export PDF Report
-                        </Button>
+                        <div className="flex gap-3">
+                          <Button 
+                            onClick={handleExportExcel} 
+                            className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 h-auto font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                          >
+                            <FileSpreadsheet className="h-5 w-5 mr-2" />
+                            Export Excel
+                          </Button>
+                          <Button 
+                            onClick={handleExportPDF} 
+                            className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 h-auto font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                          >
+                            <Download className="h-5 w-5 mr-2" />
+                            Export PDF
+                          </Button>
+                          <Button 
+                            onClick={handleExportRemarks} 
+                            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 h-auto font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                          >
+                            <FileSpreadsheet className="h-5 w-5 mr-2" />
+                            Remarks Report
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -460,9 +606,10 @@ export default function AdminDashboard() {
                 <div className="space-y-6">
                   {/* Search Bar */}
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Search Sessions</label>
+                    <label htmlFor="schedule-search" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Search Sessions</label>
                     <div className="flex gap-4">
                       <Input
+                        id="schedule-search"
                         type="text"
                         placeholder="Search by batch, phase, subject, staff, or date..."
                         value={scheduleSearchText}
@@ -482,9 +629,9 @@ export default function AdminDashboard() {
                   {/* Filter Controls */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Batch</label>
+                      <label htmlFor="schedule-batch" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Batch</label>
                       <Select onValueChange={setScheduleFilterBatch} value={scheduleFilterBatch}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="schedule-batch" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Batches" />
                         </SelectTrigger>
                         <SelectContent>
@@ -497,9 +644,9 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Phase</label>
+                      <label htmlFor="schedule-phase" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Phase</label>
                       <Select onValueChange={setScheduleFilterPhase} value={scheduleFilterPhase}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="schedule-phase" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Phases" />
                         </SelectTrigger>
                         <SelectContent>
@@ -512,9 +659,9 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subject</label>
+                      <label htmlFor="schedule-subject" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subject</label>
                       <Select onValueChange={setScheduleFilterSubject} value={scheduleFilterSubject}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="schedule-subject" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Subjects" />
                         </SelectTrigger>
                         <SelectContent>
@@ -527,9 +674,9 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Staff</label>
+                      <label htmlFor="schedule-staff" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Staff</label>
                       <Select onValueChange={setScheduleFilterStaff} value={scheduleFilterStaff}>
-                        <SelectTrigger className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
+                        <SelectTrigger id="schedule-staff" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Staff" />
                         </SelectTrigger>
                         <SelectContent>
@@ -545,8 +692,9 @@ export default function AdminDashboard() {
                   {/* Date Range */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">From Date</label>
+                      <label htmlFor="schedule-from-date" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">From Date</label>
                       <Input
+                        id="schedule-from-date"
                         type="date"
                         value={scheduleFromDate}
                         onChange={(e) => setScheduleFromDate(e.target.value)}
@@ -554,8 +702,9 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">To Date</label>
+                      <label htmlFor="schedule-to-date" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">To Date</label>
                       <Input
+                        id="schedule-to-date"
                         type="date"
                         value={scheduleToDate}
                         onChange={(e) => setScheduleToDate(e.target.value)}

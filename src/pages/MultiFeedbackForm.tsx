@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Send, Loader2 } from "lucide-react";
 import { buildUrl, api, type SubmitFeedbackRequest } from "@shared/routes";
 
@@ -17,6 +18,7 @@ export default function MultiFeedbackForm() {
   
   const [currentStaffIndex, setCurrentStaffIndex] = useState(0);
   const [allAnswers, setAllAnswers] = useState<Record<number, Record<number, number>>>({});
+  const [allRemarks, setAllRemarks] = useState<Record<number, string>>({});
   const [sections, setSections] = useState<Array<{sectionName: string; questions: Array<{id: number; text: string; options: Array<{id: number; optionText: string; marks: number}>}>}>>([]);
   const [loading, setLoading] = useState(true);
   
@@ -125,6 +127,7 @@ export default function MultiFeedbackForm() {
           staff_id: feedback.staff.id,
           batch_id: String(user.batch),
           subject_id: feedback.subject.id,
+          remarks: allRemarks[feedback.id] || "",
         });
       });
     }
@@ -199,6 +202,19 @@ export default function MultiFeedbackForm() {
               ))}
             </div>
           ))}
+        </div>
+
+        <div className="mt-8 p-6 border rounded-lg">
+          <Label htmlFor="remarks" className="text-base font-medium mb-2 block">
+            Remarks for {currentFeedback.staff.name} (Optional)
+          </Label>
+          <Textarea
+            id="remarks"
+            placeholder="Enter any additional comments or feedback for this staff member..."
+            value={allRemarks[currentFeedback.id] || ""}
+            onChange={(e) => setAllRemarks(prev => ({ ...prev, [currentFeedback.id]: e.target.value }))}
+            className="min-h-[100px]"
+          />
         </div>
 
         <div className="mt-12 flex justify-between gap-4">

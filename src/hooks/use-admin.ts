@@ -63,18 +63,23 @@ export function useCreateSchedule() {
   });
 }
 
-export function useAnalytics(staffId: number, filters?: { batchId?: string; subjectId?: string }) {
-  const path = buildUrl(api.admin.analytics.path, { staffId });
+export function useAnalytics(staffId: number | string, filters?: { batchId?: string; phase?: string; subjectId?: string; templateId?: string; fromDate?: string; toDate?: string }) {
+  const actualStaffId = staffId === "all" ? 0 : Number(staffId);
+  const path = buildUrl(api.admin.analytics.path, { staffId: actualStaffId });
   const queryParams = new URLSearchParams();
   if (filters?.batchId && filters.batchId !== 'all') queryParams.append("batchId", filters.batchId);
+  if (filters?.phase && filters.phase !== 'all') queryParams.append("phase", filters.phase);
   if (filters?.subjectId && filters.subjectId !== 'all') queryParams.append("subjectId", filters.subjectId);
+  if (filters?.templateId && filters.templateId !== 'all') queryParams.append("templateId", filters.templateId);
+  if (filters?.fromDate) queryParams.append("fromDate", filters.fromDate);
+  if (filters?.toDate) queryParams.append("toDate", filters.toDate);
 
   const url = `${path}?${queryParams.toString()}`;
 
   return useQuery({
-    queryKey: [api.admin.analytics.path, staffId, filters],
+    queryKey: [api.admin.analytics.path, actualStaffId, filters],
     queryFn: async () => {
-      if (!staffId) return null;
+      if (!staffId || staffId === "") return null;
       const token = getToken();
       const res = await fetch(url, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
@@ -82,6 +87,6 @@ export function useAnalytics(staffId: number, filters?: { batchId?: string; subj
       if (!res.ok) throw new Error("Failed to fetch analytics");
       return api.admin.analytics.responses[200].parse(await res.json());
     },
-    enabled: !!staffId,
+    enabled: !!staffId && staffId !== "",
   });
 }
