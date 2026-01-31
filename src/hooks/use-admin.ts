@@ -63,29 +63,47 @@ export function useCreateSchedule() {
   });
 }
 
-export function useAnalytics(staffId: number | string, filters?: { batchId?: string; phase?: string; subjectId?: string; templateId?: string; fromDate?: string; toDate?: string }) {
+export function useAnalytics(staffId: number | string, filters?: { batchIds?: string[]; phases?: string[]; subjectIds?: string[]; templateId?: string; fromDate?: string; toDate?: string }) {
   const actualStaffId = staffId === "all" ? 0 : Number(staffId);
-  const path = buildUrl(api.admin.analytics.path, { staffId: actualStaffId });
+  const baseUrl = import.meta.env.VITE_API_BASE_URL;
+  const path = `${baseUrl}/api/feedback/admin/analytics/${actualStaffId}`;
+  
   const queryParams = new URLSearchParams();
-  if (filters?.batchId && filters.batchId !== 'all') queryParams.append("batchId", filters.batchId);
-  if (filters?.phase && filters.phase !== 'all') queryParams.append("phase", filters.phase);
-  if (filters?.subjectId && filters.subjectId !== 'all') queryParams.append("subjectId", filters.subjectId);
-  if (filters?.templateId && filters.templateId !== 'all') queryParams.append("templateId", filters.templateId);
+  if (filters?.batchIds && filters.batchIds.length > 0) {
+    filters.batchIds.forEach(id => queryParams.append("batchIds", id));
+  }
+  if (filters?.phases && filters.phases.length > 0) {
+    filters.phases.forEach(p => queryParams.append("phases", p));
+  }
+  if (filters?.subjectIds && filters.subjectIds.length > 0) {
+    filters.subjectIds.forEach(id => queryParams.append("subjectIds", id));
+  }
+  if (filters?.templateId && filters.templateId !== 'all') {
+    queryParams.append("templateId", filters.templateId);
+  }
   if (filters?.fromDate) queryParams.append("fromDate", filters.fromDate);
   if (filters?.toDate) queryParams.append("toDate", filters.toDate);
 
-  const url = `${path}?${queryParams.toString()}`;
+  const url = queryParams.toString() ? `${path}?${queryParams.toString()}` : path;
 
   return useQuery({
-    queryKey: [api.admin.analytics.path, actualStaffId, filters],
+    queryKey: ['analytics', actualStaffId, filters?.batchIds, filters?.phases, filters?.subjectIds, filters?.templateId, filters?.fromDate, filters?.toDate],
     queryFn: async () => {
-      if (!staffId || staffId === "") return null;
+      if (!staffId || staffId === "") return [];
+      
       const token = getToken();
       const res = await fetch(url, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       });
-      if (!res.ok) throw new Error("Failed to fetch analytics");
-      return api.admin.analytics.responses[200].parse(await res.json());
+      
+      if (!res.ok) {
+        console.error('Analytics fetch failed:', res.status, res.statusText);
+        throw new Error(`Failed to fetch analytics: ${res.status}`);
+      }
+      
+      const data = await res.json();
+      console.log('Analytics data received:', data);
+      return data || [];
     },
     enabled: !!staffId && staffId !== "",
   });

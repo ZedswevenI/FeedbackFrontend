@@ -24,7 +24,7 @@ export function useActiveFeedback() {
 export function useSubmitFeedback() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
+  // Remove automatic navigation - let components handle it
 
   return useMutation({
     mutationFn: async (data: SubmitFeedbackInput) => {
@@ -53,7 +53,7 @@ export function useSubmitFeedback() {
         title: "Feedback Submitted",
         description: "Thank you for your valuable feedback.",
       });
-      setLocation("/student");
+      // Let components handle navigation
     },
     onError: (error: Error) => {
       toast({

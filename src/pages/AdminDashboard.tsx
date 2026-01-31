@@ -8,11 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LogOut, CalendarRange, FileText, Download, ChevronLeft, ChevronRight, Edit, FileSpreadsheet } from "lucide-react";
+import { LogOut, CalendarRange, FileText, Download, ChevronLeft, ChevronRight, Edit, FileSpreadsheet, Trash2 } from "lucide-react";
 import { CreateScheduleDialog } from "@/components/CreateScheduleDialog";
 import { EditScheduleDialog } from "@/components/EditScheduleDialog";
 import { useToast } from "@/hooks/use-toast";
-import { buildUrl } from "@shared/routes";
+import { MultiSelect } from "@/components/MultiSelect";
 import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
@@ -20,10 +20,10 @@ export default function AdminDashboard() {
   const { data: metadata } = useAdminMetadata();
   const { data: schedules, refetch: refetchSchedules } = useSchedules();
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
-  const [selectedBatchId, setSelectedBatchId] = useState<string>("all");
-  const [selectedPhase, setSelectedPhase] = useState<string>("all");
-  const [selectedSubject, setSelectedSubject] = useState<string>("all");
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("all");
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
+  const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -40,9 +40,9 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   
   const { data: analytics, refetch: refetchAnalytics } = useAnalytics(selectedStaffId, { 
-    batchId: selectedBatchId,
-    phase: selectedPhase,
-    subjectId: selectedSubject,
+    batchIds: selectedBatchIds,
+    phases: selectedPhases,
+    subjectIds: selectedSubjects,
     templateId: selectedTemplate,
     fromDate: fromDate,
     toDate: toDate
@@ -57,10 +57,10 @@ export default function AdminDashboard() {
 
   const handleReset = () => {
     setSelectedStaffId("");
-    setSelectedBatchId("all");
-    setSelectedPhase("all");
-    setSelectedSubject("all");
-    setSelectedTemplate("all");
+    setSelectedBatchIds([]);
+    setSelectedPhases([]);
+    setSelectedSubjects([]);
+    setSelectedTemplate("");
     setFromDate("");
     setToDate("");
     setShowAnalytics(false);
@@ -78,10 +78,43 @@ export default function AdminDashboard() {
     setCurrentPage(1);
   };
 
+  const handleDeleteSchedule = async (scheduleId: number) => {
+    if (!confirm('Are you sure you want to delete this schedule?')) return;
+    
+    try {
+      const token = getToken();
+      const baseUrl = import.meta.env.VITE_API_BASE_URL;
+      const url = `${baseUrl}/api/feedback/admin/schedules/${scheduleId}`;
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Schedule deleted successfully",
+        });
+        refetchSchedules();
+      } else {
+        const error = await response.text();
+        throw new Error(error || 'Failed to delete schedule');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete schedule",
+        variant: "destructive",
+      });
+    }
+  };
   const handleToggleSchedule = async (scheduleId: number, currentStatus: boolean) => {
     try {
       const token = getToken();
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+      const baseUrl = import.meta.env.VITE_API_BASE_URL;
       const url = `${baseUrl}/api/feedback/admin/schedules/${scheduleId}/toggle`;
       const response = await fetch(url, {
         method: 'PUT',
@@ -138,9 +171,12 @@ export default function AdminDashboard() {
 
   // Filter staff based on selected filters
   const filteredStaff = metadata?.staff?.filter((s: any) => {
-    if (selectedBatchId === 'all' && selectedPhase === 'all' && selectedSubject === 'all' && selectedTemplate === 'all') {
+    // Always show all staff if no filters are applied
+    if (selectedBatchIds.length === 0 && selectedPhases.length === 0 && selectedSubjects.length === 0 && selectedTemplate === '') {
       return true;
     }
+    
+    // Find schedules for this staff member
     const staffSchedules = schedules?.filter((sch: any) => {
       const scheduleDate = new Date(sch.startDate);
       const from = fromDate ? new Date(fromDate) : null;
@@ -148,12 +184,16 @@ export default function AdminDashboard() {
       const dateMatch = (!from || scheduleDate >= from) && (!to || scheduleDate <= to);
       return sch.staffId === s.id && dateMatch;
     }) || [];
+    
+    // If no schedules found for this staff, don't show them
     if (staffSchedules.length === 0) return false;
+    
+    // Check if any schedule matches the selected filters
     return staffSchedules.some((sch: any) => {
-      const batchMatch = selectedBatchId === 'all' || sch.batch === selectedBatchId;
-      const phaseMatch = selectedPhase === 'all' || sch.phase === selectedPhase;
-      const subjectMatch = selectedSubject === 'all' || String(sch.subjectId) === selectedSubject;
-      const templateMatch = selectedTemplate === 'all' || String(sch.templateId) === selectedTemplate;
+      const batchMatch = selectedBatchIds.length === 0 || selectedBatchIds.includes(sch.batch);
+      const phaseMatch = selectedPhases.length === 0 || selectedPhases.includes(String(sch.phase));
+      const subjectMatch = selectedSubjects.length === 0 || selectedSubjects.includes(String(sch.subjectId));
+      const templateMatch = selectedTemplate === '' || String(sch.templateId) === selectedTemplate;
       return batchMatch && phaseMatch && subjectMatch && templateMatch;
     });
   }) || [];
@@ -219,7 +259,7 @@ export default function AdminDashboard() {
     const staffName = selectedStaffId === "all" ? "All Staff" : metadata?.staff.find((s: any) => s.id === Number(selectedStaffId))?.name || 'Staff';
     const relevantSchedules = schedules?.filter((s: any) => 
       (selectedStaffId === "all" || s.staffId === Number(selectedStaffId)) && 
-      (selectedBatchId === 'all' || s.batch === selectedBatchId)
+      (selectedBatchIds.length === 0 || selectedBatchIds.includes(s.batch))
     ) || [];
     
     const formatDate = (dateStr: string) => {
@@ -250,19 +290,20 @@ export default function AdminDashboard() {
     }).join('');
     
     const staffHeader = selectedStaffId === "all" ? '<th>Staff</th>' : '';
+    const batchDisplay = selectedBatchIds.length === 0 ? 'All Batches' : selectedBatchIds.join(', ');
     
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    printWindow.document.write(`<!DOCTYPE html><html><head><title>Feedback Report - ${staffName}</title><style>@page{size:landscape;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;padding:20px;color:#333;line-height:1.4;background:#fff}.header{text-align:center;margin-bottom:20px;padding-bottom:10px;border-bottom:3px solid #dc2626}h1{font-size:20px;color:#dc2626;font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px}.subtitle{color:#555;font-size:11px;margin-bottom:2px;font-weight:500}.date-info{color:#777;font-size:9px;font-style:italic}table{width:100%;border-collapse:collapse;margin:15px 0;font-size:9px;box-shadow:0 0 10px rgba(0,0,0,0.1)}thead tr{background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{padding:8px 4px;text-align:center;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.3px;border-right:1px solid rgba(255,255,255,0.3);background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th:last-child{border-right:none}tbody tr{background:#fff;border-bottom:1px solid #ddd}tbody tr:nth-child(even){background:#f9f9f9;-webkit-print-color-adjust:exact;print-color-adjust:exact}td{padding:6px 4px;text-align:center;border-right:1px solid #e0e0e0;font-size:9px}td:last-child{border-right:none}td:first-child{font-weight:600;color:#dc2626;text-align:left;padding-left:8px}.summary{margin-top:15px;padding:10px 15px;background:#fff;border:2px solid #dc2626;border-radius:4px}.summary-title{font-size:12px;font-weight:700;margin-bottom:6px;color:#dc2626;text-transform:uppercase}.summary-text{font-size:10px;color:#555;line-height:1.6}@media print{@page{size:landscape;margin:10mm}body{padding:10px}table{font-size:8px;page-break-inside:auto}tr{page-break-inside:avoid;page-break-after:auto}th,td{padding:5px 3px}thead{display:table-header-group}thead tr{background:#dc2626!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>Consolidated Feedback Report</h1><p class="subtitle">Staff: ${staffName} | Batch: ${selectedBatchId==='all'?'All Batches':selectedBatchId}</p><p class="date-info">Feedback Period: ${dateRange}</p></div><table><thead><tr>${staffHeader}<th>Batch</th><th>Phase</th><th>Date</th><th>Template</th><th>Strength</th><th>Responses</th>${firstBatch.questionStats?.filter((q:any)=>q.section==='Part A'||!q.section).map((_:any,i:number)=>`<th>A${i+1}</th>`).join('')}${firstBatch.questionStats?.filter((q:any)=>q.section==='Part B').map((_:any,i:number)=>`<th>B${i+1}</th>`).join('')}<th>TEA%</th><th>REA%</th></tr></thead><tbody>${tableRows}</tbody></table><div class="summary"><div class="summary-title">Summary</div><div class="summary-text">Overall teaching effectiveness: <strong style="color:#16a34a">${avgTeaching.toFixed(1)}%</strong> | Research effectiveness: <strong style="color:#2563eb">${avgResearch.toFixed(1)}%</strong></div></div><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`);
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>Feedback Report - ${staffName}</title><style>@page{size:landscape;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;padding:20px;color:#333;line-height:1.4;background:#fff}.header{text-align:center;margin-bottom:20px;padding-bottom:10px;border-bottom:3px solid #dc2626}h1{font-size:20px;color:#dc2626;font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px}.subtitle{color:#555;font-size:11px;margin-bottom:2px;font-weight:500}.date-info{color:#777;font-size:9px;font-style:italic}table{width:100%;border-collapse:collapse;margin:15px 0;font-size:9px;box-shadow:0 0 10px rgba(0,0,0,0.1)}thead tr{background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{padding:8px 4px;text-align:center;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.3px;border-right:1px solid rgba(255,255,255,0.3);background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th:last-child{border-right:none}tbody tr{background:#fff;border-bottom:1px solid #ddd}tbody tr:nth-child(even){background:#f9f9f9;-webkit-print-color-adjust:exact;print-color-adjust:exact}td{padding:6px 4px;text-align:center;border-right:1px solid #e0e0e0;font-size:9px}td:last-child{border-right:none}td:first-child{font-weight:600;color:#dc2626;text-align:left;padding-left:8px}.summary{margin-top:15px;padding:10px 15px;background:#fff;border:2px solid #dc2626;border-radius:4px}.summary-title{font-size:12px;font-weight:700;margin-bottom:6px;color:#dc2626;text-transform:uppercase}.summary-text{font-size:10px;color:#555;line-height:1.6}@media print{@page{size:landscape;margin:10mm}body{padding:10px}table{font-size:8px;page-break-inside:auto}tr{page-break-inside:avoid;page-break-after:auto}th,td{padding:5px 3px}thead{display:table-header-group}thead tr{background:#dc2626!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{background:#dc2626!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>Consolidated Feedback Report</h1><p class="subtitle">Staff: ${staffName} | Batch: ${batchDisplay}</p><p class="date-info">Feedback Period: ${dateRange}</p></div><table><thead><tr>${staffHeader}<th>Batch</th><th>Phase</th><th>Date</th><th>Template</th><th>Strength</th><th>Responses</th>${firstBatch.questionStats?.filter((q:any)=>q.section==='Part A'||!q.section).map((_:any,i:number)=>`<th>A${i+1}</th>`).join('')}${firstBatch.questionStats?.filter((q:any)=>q.section==='Part B').map((_:any,i:number)=>`<th>B${i+1}</th>`).join('')}<th>TEA%</th><th>REA%</th></tr></thead><tbody>${tableRows}</tbody></table><div class="summary"><div class="summary-title">Summary</div><div class="summary-text">Overall teaching effectiveness: <strong style="color:#16a34a">${avgTeaching.toFixed(1)}%</strong> | Research effectiveness: <strong style="color:#2563eb">${avgResearch.toFixed(1)}%</strong></div></div><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`);
     printWindow.document.close();
   };
 
   const handleExportRemarks = async () => {
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+      const baseUrl = import.meta.env.VITE_API_BASE_URL;
       const token = getToken();
       const staffParam = selectedStaffId && selectedStaffId !== 'all' ? selectedStaffId : '0';
-      const batchParam = selectedBatchId || 'all';
+      const batchParam = selectedBatchIds.length > 0 ? selectedBatchIds[0] : 'all';
       const url = `${baseUrl}/api/feedback/admin/remarks/export?staffId=${staffParam}&batchId=${batchParam}`;
       
       const response = await fetch(url, {
@@ -345,58 +386,42 @@ export default function AdminDashboard() {
                   {/* Primary Filters Row */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                     <div className="space-y-2">
-                      <label htmlFor="analytics-batch" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Batch</label>
-                      <Select onValueChange={setSelectedBatchId} value={selectedBatchId}>
-                        <SelectTrigger id="analytics-batch" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
-                          <SelectValue placeholder="All Batches" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Batches</SelectItem>
-                          {metadata?.batches.map((b: string) => (
-                            <SelectItem key={b} value={b}>{b}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Batch</label>
+                      <MultiSelect
+                        options={metadata?.batches?.map((b: string) => ({ value: b, label: b })) || []}
+                        selected={selectedBatchIds}
+                        onSelectionChange={setSelectedBatchIds}
+                        placeholder="All Batches"
+                      />
                     </div>
                     
                     <div className="space-y-2">
-                      <label htmlFor="analytics-phase" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Phase</label>
-                      <Select onValueChange={setSelectedPhase} value={selectedPhase}>
-                        <SelectTrigger id="analytics-phase" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
-                          <SelectValue placeholder="All Phases" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Phases</SelectItem>
-                          {[1,2,3,4,5,6,7,8,9,10,'R'].map(p => (
-                            <SelectItem key={p} value={String(p)}>Phase {p}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Phase</label>
+                      <MultiSelect
+                        options={[1,2,3,4,5,6,7,8,9,10,'R'].map(p => ({ value: String(p), label: `Phase ${p}` }))}
+                        selected={selectedPhases}
+                        onSelectionChange={setSelectedPhases}
+                        placeholder="All Phases"
+                      />
                     </div>
                     
                     <div className="space-y-2">
-                      <label htmlFor="analytics-subject" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subject</label>
-                      <Select onValueChange={setSelectedSubject} value={selectedSubject}>
-                        <SelectTrigger id="analytics-subject" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
-                          <SelectValue placeholder="All Subjects" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Subjects</SelectItem>
-                          {metadata?.subjects?.map((sub: { id: number; name: string }) => (
-                            <SelectItem key={sub.id} value={String(sub.id)}>{sub.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subject</label>
+                      <MultiSelect
+                        options={metadata?.subjects?.map((sub: { id: number; name: string }) => ({ value: String(sub.id), label: sub.name })) || []}
+                        selected={selectedSubjects}
+                        onSelectionChange={setSelectedSubjects}
+                        placeholder="All Subjects"
+                      />
                     </div>
                     
                     <div className="space-y-2">
                       <label htmlFor="analytics-template" className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Template</label>
                       <Select onValueChange={setSelectedTemplate} value={selectedTemplate}>
                         <SelectTrigger id="analytics-template" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
-                          <SelectValue placeholder="All Templates" />
+                          <SelectValue placeholder="Select Template" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">All Templates</SelectItem>
                           {metadata?.templates?.map((t: { id: number; name: string }) => (
                             <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                           ))}
@@ -772,6 +797,15 @@ export default function AdminDashboard() {
                                       }
                                     >
                                       {schedule.isActive ? 'Disable' : 'Enable'}
+                                    </Button>
+                                    <Button 
+                                      variant="destructive" 
+                                      size="sm"
+                                      onClick={() => handleDeleteSchedule(schedule.id)}
+                                      className="bg-red-600 hover:bg-red-700"
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-1" />
+                                      Delete
                                     </Button>
                                   </div>
                                 </TableCell>

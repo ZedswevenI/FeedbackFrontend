@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getApiBaseUrl } from "./api";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -19,6 +20,54 @@ export async function apiRequest(
     credentials: "include",
   });
 
+  // Check for auto-refreshed token
+  const newToken = res.headers.get('X-New-Token');
+  if (newToken) {
+    const currentToken = localStorage.getItem('token');
+    if (currentToken) {
+      localStorage.setItem('token', newToken);
+    }
+  }
+
+  // Handle token expiration
+  if (res.status === 401) {
+    const contentType = res.headers.get('Content-Type');
+    if (contentType?.includes('application/json')) {
+      const errorData = await res.json();
+      
+      if (errorData.code === 'TOKEN_EXPIRED') {
+        const token = localStorage.getItem('token');
+        if (token) {
+          try {
+            const refreshRes = await fetch(`${getApiBaseUrl()}/api/auth/refresh-token`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              credentials: 'include'
+            });
+            
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              if (refreshData.success && refreshData.data?.token) {
+                localStorage.setItem('token', refreshData.data.token);
+                // Retry original request
+                return apiRequest(method, url, data);
+              }
+            }
+          } catch (e) {
+            console.error('Token refresh failed:', e);
+          }
+        }
+        
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        throw new Error('Token expired');
+      }
+    }
+  }
+
   await throwIfResNotOk(res);
   return res;
 }
@@ -32,6 +81,15 @@ export const getQueryFn: <T>(options: {
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
     });
+
+    // Check for auto-refreshed token
+    const newToken = res.headers.get('X-New-Token');
+    if (newToken) {
+      const currentToken = localStorage.getItem('token');
+      if (currentToken) {
+        localStorage.setItem('token', newToken);
+      }
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

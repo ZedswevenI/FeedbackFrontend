@@ -26,28 +26,65 @@ export default function MultiFeedbackForm() {
   const currentFeedback = pendingFeedback[currentStaffIndex];
   const isLastStaff = currentStaffIndex === pendingFeedback.length - 1;
   const currentAnswers = allAnswers[currentFeedback?.id] || {};
+  const storageKey = `multi_feedback_${user && typeof user === 'object' && 'username' in user ? user.username : 'guest'}`;
+
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        setAllAnswers(data.answers || {});
+        setAllRemarks(data.remarks || {});
+        setCurrentStaffIndex(data.currentIndex || 0);
+      } catch (e) {
+        console.error('Failed to load saved feedback', e);
+      }
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (Object.keys(allAnswers).length > 0 || Object.keys(allRemarks).length > 0) {
+      localStorage.setItem(storageKey, JSON.stringify({
+        answers: allAnswers,
+        remarks: allRemarks,
+        currentIndex: currentStaffIndex
+      }));
+    }
+  }, [allAnswers, allRemarks, currentStaffIndex, storageKey]);
 
   useEffect(() => {
     if (currentFeedback?.templateId) {
+      const controller = new AbortController();
       setLoading(true);
       const url = buildUrl(api.templates.questions.path, { templateId: currentFeedback.templateId });
       const token = getToken();
+      
       fetch(url, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        signal: controller.signal
       })
         .then(res => res.json())
         .then(data => {
-          setSections(data.sections.map((s: any) => ({
-            sectionName: s.sectionName,
-            questions: s.questions.map((q: any) => ({ 
-              id: q.id, 
-              text: q.questionText,
-              options: q.options 
-            }))
-          })));
-          setLoading(false);
+          if (!controller.signal.aborted) {
+            setSections(data.sections.map((s: any) => ({
+              sectionName: s.sectionName,
+              questions: s.questions.map((q: any) => ({ 
+                id: q.id, 
+                text: q.questionText,
+                options: q.options 
+              }))
+            })));
+            setLoading(false);
+          }
         })
-        .catch(() => setLoading(false));
+        .catch((error) => {
+          if (!controller.signal.aborted) {
+            console.error('Fetch error:', error);
+            setLoading(false);
+          }
+        });
+      
+      return () => controller.abort();
     }
   }, [currentFeedback?.templateId]);
 
@@ -79,28 +116,13 @@ export default function MultiFeedbackForm() {
   };
 
   const handleSubmitAll = async () => {
-    if (!user || typeof user !== 'object' || !('batch' in user)) return;
-
-    // Validate all staff feedbacks are complete
-    for (const feedback of pendingFeedback) {
-      const answers = allAnswers[feedback.id];
-      if (!answers) return; // No answers for this staff
-      
-      const url = buildUrl(api.templates.questions.path, { templateId: feedback.templateId });
-      const token = getToken();
-      const response = await fetch(url, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      });
-      const data = await response.json();
-      const totalQuestionsForStaff = data.sections.reduce((sum: number, s: any) => sum + s.questions.length, 0);
-      
-      if (Object.keys(answers).length !== totalQuestionsForStaff) return; // Incomplete
-    }
+    if (!user || typeof user !== 'object' || !('batch' in user) || !user.batch) return;
 
     const allPayloads: SubmitFeedbackRequest[] = [];
     
     for (const feedback of pendingFeedback) {
       const answers = allAnswers[feedback.id];
+      if (!answers) continue;
       
       const url = buildUrl(api.templates.questions.path, { templateId: feedback.templateId });
       const token = getToken();
@@ -125,14 +147,24 @@ export default function MultiFeedbackForm() {
           option_id: optionId,
           marks: option?.marks || 0,
           staff_id: feedback.staff.id,
-          batch_id: String(user.batch),
+          batch_id: (user as any).batch || "",
           subject_id: feedback.subject.id,
           remarks: allRemarks[feedback.id] || "",
         });
       });
     }
 
-    submitFeedback(allPayloads);
+    submitFeedback(allPayloads, {
+      onSuccess: (response: any) => {
+        localStorage.removeItem(storageKey);
+        // Don't show alert here - hook handles toast
+        setLocation("/student");
+      },
+      onError: (error) => {
+        console.error('Submission failed:', error);
+        // Don't show alert here - hook handles toast
+      }
+    });
   };
 
   if (!currentFeedback || loading) return null;

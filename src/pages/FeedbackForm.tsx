@@ -10,6 +10,23 @@ import { ArrowLeft, Loader2, Send } from "lucide-react";
 import { motion } from "framer-motion";
 import { api, type SubmitFeedbackRequest, buildUrl } from "@shared/routes";
 
+// Sanitize user input to prevent XSS
+const sanitizeInput = (input: string): string => {
+  if (!input) return '';
+  return input
+    .replace(/[<>"'&]/g, (match) => {
+      const escapeMap: { [key: string]: string } = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;',
+        '&': '&amp;'
+      };
+      return escapeMap[match];
+    })
+    .slice(0, 1000); // Limit length
+};
+
 export default function FeedbackForm() {
   const [, params] = useRoute("/student/feedback/:id");
   const [, setLocation] = useLocation();
@@ -23,27 +40,57 @@ export default function FeedbackForm() {
   
   const scheduleId = Number(params?.id);
   const currentFeedback = feedbackList?.find(f => f.id === scheduleId);
+  const storageKey = `feedback_answers_${scheduleId}_${user && typeof user === 'object' && 'username' in user ? user.username : 'guest'}`;
+
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        setAnswers(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load saved answers', e);
+      }
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (Object.keys(answers).length > 0) {
+      localStorage.setItem(storageKey, JSON.stringify(answers));
+    }
+  }, [answers, storageKey]);
 
   useEffect(() => {
     if (currentFeedback?.templateId) {
+      const controller = new AbortController();
       const url = buildUrl(api.templates.questions.path, { templateId: currentFeedback.templateId });
       const token = getToken();
+      
       fetch(url, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        signal: controller.signal
       })
         .then(res => res.json())
         .then(data => {
-          setSections(data.sections.map((s: any) => ({
-            sectionName: s.sectionName,
-            questions: s.questions.map((q: any) => ({ 
-              id: q.id, 
-              text: q.questionText,
-              options: q.options 
-            }))
-          })));
-          setLoading(false);
+          if (!controller.signal.aborted) {
+            setSections(data.sections.map((s: any) => ({
+              sectionName: s.sectionName,
+              questions: s.questions.map((q: any) => ({ 
+                id: q.id, 
+                text: q.questionText,
+                options: q.options 
+              }))
+            })));
+            setLoading(false);
+          }
         })
-        .catch(() => setLoading(false));
+        .catch((error) => {
+          if (!controller.signal.aborted) {
+            console.error('Fetch error:', error);
+            setLoading(false);
+          }
+        });
+      
+      return () => controller.abort();
     }
   }, [currentFeedback?.templateId]);
 
@@ -72,12 +119,22 @@ export default function FeedbackForm() {
         option_id: optionId,
         marks: option?.marks || 0,
         staff_id: currentFeedback.staff.id,
-        batch_id: (user as any).batch,
+        batch_id: (user as any).batch || "",
         subject_id: currentFeedback.subject.id,
       };
     });
 
-    submitFeedback(payload);
+    submitFeedback(payload, {
+      onSuccess: (response: any) => {
+        localStorage.removeItem(storageKey);
+        // Don't show alert here - hook handles toast
+        setLocation("/student");
+      },
+      onError: (error) => {
+        console.error('Submission failed:', error);
+        // Don't show alert here - hook handles toast
+      }
+    });
   };
 
   return (
@@ -127,12 +184,13 @@ export default function FeedbackForm() {
                     <CardHeader>
                       <CardTitle className="text-base font-medium leading-relaxed">
                         <span className="text-muted-foreground mr-2">{index + 1}.</span>
-                        {q.text}
+                        <span dangerouslySetInnerHTML={{ __html: sanitizeInput(q.text) }} />
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <RadioGroup 
                         onValueChange={(val) => setAnswers(prev => ({ ...prev, [q.id]: Number(val) }))}
+                        value={answers[q.id] ? String(answers[q.id]) : undefined}
                         className="flex flex-col gap-3"
                       >
                         {q.options?.map((opt) => (
