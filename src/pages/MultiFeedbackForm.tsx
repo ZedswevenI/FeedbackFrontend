@@ -23,6 +23,7 @@ export default function MultiFeedbackForm() {
   const [allRemarks, setAllRemarks] = useState<Record<number, string>>({});
   const [sections, setSections] = useState<Array<{sectionName: string; questions: Array<{id: number; text: string; options: Array<{id: number; optionText: string; marks: number}>}>}>>([]);
   const [loading, setLoading] = useState(true);
+  const [templateCache, setTemplateCache] = useState<Record<number, any>>({});
   
   const pendingFeedback = feedbackList?.filter(f => !f.isCompleted) || [];
   const currentFeedback = pendingFeedback[currentStaffIndex];
@@ -76,6 +77,7 @@ export default function MultiFeedbackForm() {
                 options: q.options 
               }))
             })));
+            setTemplateCache(prev => ({ ...prev, [currentFeedback.templateId]: data }));
             setLoading(false);
           }
         })
@@ -122,18 +124,12 @@ export default function MultiFeedbackForm() {
 
     const allPayloads: SubmitFeedbackRequest[] = [];
     
-    // Collect all payloads first
     for (const feedback of pendingFeedback) {
       const answers = allAnswers[feedback.id];
       if (!answers) continue;
       
-      const url = buildUrl(api.templates.questions.path, { templateId: feedback.templateId });
-      const token = getToken();
-      const response = await fetch(url, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      });
-      const data = await response.json();
-      const staffQuestions = data.sections.flatMap((s: any) => 
+      const cachedTemplate = templateCache[feedback.templateId];
+      const staffQuestions = cachedTemplate.sections.flatMap((s: any) => 
         s.questions.map((q: any) => ({ 
           id: q.id, 
           options: q.options 
