@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useActiveFeedback, useSubmitFeedback } from "@/hooks/use-student";
 import { useAuth, getToken } from "@/hooks/use-auth";
+import { useTokenExpiryWarning } from "@/hooks/use-token-expiry";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -33,6 +34,7 @@ export default function FeedbackForm() {
   const { data: feedbackList } = useActiveFeedback();
   const { user } = useAuth();
   const { mutate: submitFeedback, isPending } = useSubmitFeedback();
+  useTokenExpiryWarning();
   
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [sections, setSections] = useState<Array<{sectionName: string; questions: Array<{id: number; text: string; options: Array<{id: number; optionText: string; marks: number}>}>}>>([]);

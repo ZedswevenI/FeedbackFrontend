@@ -24,7 +24,6 @@ export function useActiveFeedback() {
 export function useSubmitFeedback() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  // Remove automatic navigation - let components handle it
 
   return useMutation({
     mutationFn: async (data: SubmitFeedbackInput) => {
@@ -43,9 +42,16 @@ export function useSubmitFeedback() {
           const error = api.student.submit.responses[400].parse(await res.json());
           throw new Error(error.message);
         }
+        if (res.status === 409) {
+          throw new Error('Feedback already submitted');
+        }
         throw new Error("Failed to submit feedback");
       }
-      return api.student.submit.responses[200].parse(await res.json());
+      const result = api.student.submit.responses[200].parse(await res.json());
+      if (result.status === 'already_completed') {
+        throw new Error('Feedback already submitted');
+      }
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.student.activeFeedback.path] });
@@ -53,14 +59,21 @@ export function useSubmitFeedback() {
         title: "Feedback Submitted",
         description: "Thank you for your valuable feedback.",
       });
-      // Let components handle navigation
     },
     onError: (error: Error) => {
-      toast({
-        title: "Submission Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      if (error.message.includes('already submitted')) {
+        toast({
+          title: "Already Submitted",
+          description: "Your feedback has already been recorded.",
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Submission Error",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 }

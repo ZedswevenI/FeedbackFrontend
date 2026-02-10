@@ -149,6 +149,7 @@ export const api = {
       responses: {
         200: z.object({
           message: z.string(),
+          status: z.string().optional(),
         }),
         400: z.object({
           message: z.string(),

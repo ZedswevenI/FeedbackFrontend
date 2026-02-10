@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useActiveFeedback, useSubmitFeedback } from "@/hooks/use-student";
 import { useAuth, getToken } from "@/hooks/use-auth";
+import { useTokenExpiryWarning } from "@/hooks/use-token-expiry";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -15,6 +16,7 @@ export default function MultiFeedbackForm() {
   const { data: feedbackList } = useActiveFeedback();
   const { user } = useAuth();
   const { mutate: submitFeedback, isPending } = useSubmitFeedback();
+  useTokenExpiryWarning();
   
   const [currentStaffIndex, setCurrentStaffIndex] = useState(0);
   const [allAnswers, setAllAnswers] = useState<Record<number, Record<number, number>>>({});
@@ -120,6 +122,7 @@ export default function MultiFeedbackForm() {
 
     const allPayloads: SubmitFeedbackRequest[] = [];
     
+    // Collect all payloads first
     for (const feedback of pendingFeedback) {
       const answers = allAnswers[feedback.id];
       if (!answers) continue;
@@ -154,17 +157,39 @@ export default function MultiFeedbackForm() {
       });
     }
 
-    submitFeedback(allPayloads, {
-      onSuccess: (response: any) => {
-        localStorage.removeItem(storageKey);
-        // Don't show alert here - hook handles toast
-        setLocation("/student");
-      },
-      onError: (error) => {
-        console.error('Submission failed:', error);
-        // Don't show alert here - hook handles toast
+    // Submit with retry logic
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    const attemptSubmit = async (): Promise<any> => {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          submitFeedback(allPayloads, {
+            onSuccess: (response: any) => resolve(response),
+            onError: (error: any) => reject(error)
+          });
+        });
+        return result;
+      } catch (error: any) {
+        if (retryCount < maxRetries && error?.message?.includes('already submitted')) {
+          return { status: 'already_completed' };
+        }
+        if (retryCount < maxRetries) {
+          retryCount++;
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          return attemptSubmit();
+        }
+        throw error;
       }
-    });
+    };
+
+    try {
+      await attemptSubmit();
+      localStorage.removeItem(storageKey);
+      setLocation("/student");
+    } catch (error) {
+      console.error('Final submission failed:', error);
+    }
   };
 
   if (!currentFeedback || loading) return null;
