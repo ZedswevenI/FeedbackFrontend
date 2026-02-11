@@ -28,30 +28,46 @@ export function useSubmitFeedback() {
   return useMutation({
     mutationFn: async (data: SubmitFeedbackInput) => {
       const token = getToken();
-      const res = await fetch(buildUrl(api.student.submit.path), {
-        method: api.student.submit.method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(data),
-      });
+      
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+      
+      try {
+        const res = await fetch(buildUrl(api.student.submit.path), {
+          method: api.student.submit.method,
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(data),
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
 
-      if (!res.ok) {
-        if (res.status === 400) {
-          const error = api.student.submit.responses[400].parse(await res.json());
-          throw new Error(error.message);
+        if (!res.ok) {
+          if (res.status === 400) {
+            const error = api.student.submit.responses[400].parse(await res.json());
+            throw new Error(error.message);
+          }
+          if (res.status === 409) {
+            throw new Error('Feedback already submitted');
+          }
+          throw new Error("Failed to submit feedback");
         }
-        if (res.status === 409) {
+        const result = api.student.submit.responses[200].parse(await res.json());
+        if (result.status === 'already_completed') {
           throw new Error('Feedback already submitted');
         }
-        throw new Error("Failed to submit feedback");
+        return result;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Request timeout - please try again');
+        }
+        throw error;
       }
-      const result = api.student.submit.responses[200].parse(await res.json());
-      if (result.status === 'already_completed') {
-        throw new Error('Feedback already submitted');
-      }
-      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.student.activeFeedback.path] });
