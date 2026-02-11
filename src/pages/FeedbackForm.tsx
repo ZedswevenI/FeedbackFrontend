@@ -11,7 +11,7 @@ import { ArrowLeft, Loader2, Send } from "lucide-react";
 import { motion } from "framer-motion";
 import { api, type SubmitFeedbackRequest, buildUrl } from "@shared/routes";
 
-// Sanitize user input to prevent XSS
+// Sanitize 
 const sanitizeInput = (input: string): string => {
   if (!input) return '';
   return input
