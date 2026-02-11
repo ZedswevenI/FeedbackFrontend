@@ -4,12 +4,19 @@ import { useActiveFeedback, useSubmitFeedback } from "@/hooks/use-student";
 import { useAuth, getToken } from "@/hooks/use-auth";
 import { useTokenExpiryWarning } from "@/hooks/use-token-expiry";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Send, Loader2 } from "lucide-react";
 import { buildUrl, api, type SubmitFeedbackRequest } from "@shared/routes";
+
+const getQuestionCount = (templateData: any): number => {
+  if (!templateData?.sections || !Array.isArray(templateData.sections)) return 0;
+  return templateData.sections.reduce((count: number, section: any) => {
+    const questions = Array.isArray(section?.questions) ? section.questions.length : 0;
+    return count + questions;
+  }, 0);
+};
 
 export default function MultiFeedbackForm() {
   const [, setLocation] = useLocation();
@@ -30,6 +37,24 @@ export default function MultiFeedbackForm() {
   const isLastStaff = currentStaffIndex === pendingFeedback.length - 1;
   const currentAnswers = allAnswers[currentFeedback?.id] || {};
   const storageKey = `multi_feedback_${user && typeof user === 'object' && 'username' in user ? user.username : 'guest'}`;
+  const pendingTemplateIds = Array.from(new Set(pendingFeedback.map(f => f.templateId))).sort((a, b) => a - b);
+  const pendingTemplateIdsKey = pendingTemplateIds.join(",");
+  const cachedTemplateIdsKey = Object.keys(templateCache).sort().join(",");
+
+  const fetchTemplateById = async (templateId: number, signal?: AbortSignal) => {
+    const url = buildUrl(api.templates.questions.path, { templateId });
+    const token = getToken();
+    const response = await fetch(url, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to load template ${templateId}`);
+    }
+
+    return response.json();
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
@@ -56,17 +81,43 @@ export default function MultiFeedbackForm() {
   }, [allAnswers, allRemarks, currentStaffIndex, storageKey]);
 
   useEffect(() => {
+    if (pendingTemplateIds.length === 0) return;
+
+    const missingTemplateIds = pendingTemplateIds.filter(templateId => !templateCache[templateId]);
+    if (missingTemplateIds.length === 0) return;
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    (async () => {
+      const fetchedTemplates: Record<number, any> = {};
+
+      for (const templateId of missingTemplateIds) {
+        try {
+          fetchedTemplates[templateId] = await fetchTemplateById(templateId, controller.signal);
+        } catch (error) {
+          if (!controller.signal.aborted) {
+            console.error(`Failed to prefetch template ${templateId}`, error);
+          }
+        }
+      }
+
+      if (!cancelled && Object.keys(fetchedTemplates).length > 0) {
+        setTemplateCache(prev => ({ ...prev, ...fetchedTemplates }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [pendingTemplateIdsKey, cachedTemplateIdsKey]);
+
+  useEffect(() => {
     if (currentFeedback?.templateId) {
       const controller = new AbortController();
       setLoading(true);
-      const url = buildUrl(api.templates.questions.path, { templateId: currentFeedback.templateId });
-      const token = getToken();
-      
-      fetch(url, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-        signal: controller.signal
-      })
-        .then(res => res.json())
+      fetchTemplateById(currentFeedback.templateId, controller.signal)
         .then(data => {
           if (!controller.signal.aborted) {
             setSections(data.sections.map((s: any) => ({
@@ -95,7 +146,7 @@ export default function MultiFeedbackForm() {
   const totalQuestions = sections.reduce((sum, s) => sum + s.questions.length, 0);
   const answeredQuestions = Object.keys(currentAnswers).length;
   const progress = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
-  const isCurrentStaffComplete = answeredQuestions === totalQuestions;
+  const isCurrentStaffComplete = totalQuestions > 0 && answeredQuestions === totalQuestions;
 
   const handleAnswer = (questionId: number, optionId: number) => {
     setAllAnswers(prev => ({
@@ -123,12 +174,39 @@ export default function MultiFeedbackForm() {
     if (!user || typeof user !== 'object' || !('batch' in user) || !user.batch) return;
 
     const allPayloads: SubmitFeedbackRequest[] = [];
+    const resolvedTemplateCache: Record<number, any> = { ...templateCache };
+    
+    for (const feedback of pendingFeedback) {
+      if (!resolvedTemplateCache[feedback.templateId]) {
+        try {
+          resolvedTemplateCache[feedback.templateId] = await fetchTemplateById(feedback.templateId);
+        } catch (error) {
+          console.error(`Template missing for feedback schedule ${feedback.id}`, error);
+          return;
+        }
+      }
+    }
+
+    if (Object.keys(resolvedTemplateCache).length > Object.keys(templateCache).length) {
+      setTemplateCache(prev => ({ ...prev, ...resolvedTemplateCache }));
+    }
     
     for (const feedback of pendingFeedback) {
       const answers = allAnswers[feedback.id];
       if (!answers) continue;
       
-      const cachedTemplate = templateCache[feedback.templateId];
+      const cachedTemplate = resolvedTemplateCache[feedback.templateId];
+      if (!cachedTemplate?.sections) {
+        console.error(`Template data unavailable for schedule ${feedback.id}`);
+        return;
+      }
+
+      const requiredQuestionCount = getQuestionCount(cachedTemplate);
+      if (requiredQuestionCount === 0 || Object.keys(answers).length !== requiredQuestionCount) {
+        console.error(`Incomplete feedback for schedule ${feedback.id}`);
+        return;
+      }
+
       const staffQuestions = cachedTemplate.sections.flatMap((s: any) => 
         s.questions.map((q: any) => ({ 
           id: q.id, 
@@ -152,6 +230,18 @@ export default function MultiFeedbackForm() {
         });
       });
     }
+
+    if (allPayloads.length === 0) {
+      console.error("No feedback payload generated");
+      return;
+    }
+
+    if (allPayloads.length > 10000) {
+      console.error(`Payload exceeds backend limit: ${allPayloads.length} items (max 10000)`);
+      return;
+    }
+
+    console.log(`Submitting ${allPayloads.length} feedback responses for ${pendingFeedback.length} staff members`);
 
     // Submit with retry logic
     let retryCount = 0;
@@ -193,7 +283,11 @@ export default function MultiFeedbackForm() {
   // Check if all staff feedbacks are truly complete
   const allStaffComplete = pendingFeedback.every(feedback => {
     const answers = allAnswers[feedback.id];
-    return answers && Object.keys(answers).length > 0;
+    const cachedTemplate = templateCache[feedback.templateId];
+    if (!answers || !cachedTemplate?.sections) return false;
+
+    const requiredQuestionCount = getQuestionCount(cachedTemplate);
+    return requiredQuestionCount > 0 && Object.keys(answers).length === requiredQuestionCount;
   });
 
   return (
