@@ -19,7 +19,7 @@ function Router() {
 
       {/* Admin Routes */}
       <Route path="/admin">
-        <ProtectedRoute component={AdminDashboard} allowedRoles={["ADMIN", "SUPER_ADMIN"]} />
+        <ProtectedRoute component={AdminDashboard} allowedRoles={["ADMIN", "SUPER_ADMIN", "AO"]} />
       </Route>
 
       {/* Student Routes */}

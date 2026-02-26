@@ -17,8 +17,8 @@ import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
-  const { data: metadata, isLoading: metadataLoading } = useAdminMetadata();
-  const { data: schedules, refetch: refetchSchedules, isLoading: schedulesLoading } = useSchedules();
+  const { data: metadata } = useAdminMetadata();
+  const { data: schedules, refetch: refetchSchedules } = useSchedules();
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
@@ -41,14 +41,18 @@ export default function AdminDashboard() {
   
   const isUser72518 = user && typeof user === 'object' && 'username' in user && String(user.username) === '72518';
   
-  const { data: analytics, refetch: refetchAnalytics } = useAnalytics(selectedStaffId, { 
-    batchIds: selectedBatchIds,
-    phases: selectedPhases,
-    subjectIds: selectedSubjects,
-    templateId: selectedTemplate,
-    fromDate: fromDate,
-    toDate: toDate
-  }, { enabled: !isUser72518 });
+  const { data: analytics, refetch: refetchAnalytics } = useAnalytics(
+    selectedStaffId,
+    { 
+      batchIds: selectedBatchIds,
+      phases: selectedPhases,
+      subjectIds: selectedSubjects,
+      templateId: selectedTemplate,
+      fromDate: fromDate,
+      toDate: toDate
+    },
+    { enabled: false }
+  );
 
   const handleSearch = () => {
     if (selectedStaffId) {
@@ -336,17 +340,6 @@ export default function AdminDashboard() {
       });
     }
   };
-
-  if (metadataLoading || schedulesLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background">
