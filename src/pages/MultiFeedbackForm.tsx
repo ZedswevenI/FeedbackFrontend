@@ -171,7 +171,13 @@ export default function MultiFeedbackForm() {
   };
 
   const handleSubmitAll = async () => {
-    if (!user || typeof user !== 'object' || !('batch' in user) || !user.batch) return;
+    if (!user || typeof user !== 'object' || !('batch' in user)) return;
+    
+    const userBatch = (user as any).batch;
+    if (!userBatch || typeof userBatch !== 'string' || userBatch.trim() === '') {
+      console.error('Invalid batch ID');
+      return;
+    }
 
     const allPayloads: SubmitFeedbackRequest[] = [];
     const resolvedTemplateCache: Record<number, any> = { ...templateCache };
@@ -218,15 +224,18 @@ export default function MultiFeedbackForm() {
         const question = staffQuestions.find((q: any) => q.id === Number(qId));
         const option = question?.options.find((o: any) => o.id === optionId);
         
+        const remarks = allRemarks[feedback.id] || "";
+        const sanitizedRemarks = remarks.trim().replace(/[<>"'&;(){}\[\]]/g, '');
+        
         allPayloads.push({
           schedule_id: feedback.id,
           question_id: Number(qId),
           option_id: optionId,
-          marks: option?.marks || 0,
+          marks: Math.min(Math.max(option?.marks || 0, 0), 10),
           staff_id: feedback.staff.id,
-          batch_id: (user as any).batch || "",
+          batch_id: userBatch.trim().replace(/[^A-Za-z0-9_-]/g, '_'),
           subject_id: feedback.subject.id,
-          remarks: allRemarks[feedback.id] || "",
+          remarks: sanitizedRemarks.substring(0, 1000),
         });
       });
     }

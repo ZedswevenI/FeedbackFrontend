@@ -362,18 +362,21 @@ export default function AdminDashboard() {
           <CreateScheduleDialog />
         </div>
 
-        <Tabs defaultValue="analytics" className="space-y-8">
+        <Tabs defaultValue={user && typeof user === 'object' && 'username' in user && String(user.username) === '72518' ? 'schedules' : 'analytics'} className="space-y-8">
           <TabsList className="grid w-full grid-cols-2 lg:w-auto lg:grid-cols-2 h-12 p-1 bg-gray-100 rounded-xl">
-            <TabsTrigger value="analytics" className="flex items-center gap-2 h-10 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
-              <FileText className="h-4 w-4" />
-              <span className="font-medium">Analytics Dashboard</span>
-            </TabsTrigger>
+            {!(user && typeof user === 'object' && 'username' in user && String(user.username) === '72518') && (
+              <TabsTrigger value="analytics" className="flex items-center gap-2 h-10 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                <FileText className="h-4 w-4" />
+                <span className="font-medium">Analytics Dashboard</span>
+              </TabsTrigger>
+            )}
             <TabsTrigger value="schedules" className="flex items-center gap-2 h-10 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
               <CalendarRange className="h-4 w-4" />
               <span className="font-medium">Schedule Management</span>
             </TabsTrigger>
           </TabsList>
 
+          {!(user && typeof user === 'object' && 'username' in user && String(user.username) === '72518') && (
           <TabsContent value="analytics" className="mt-8">
             <Card className="shadow-lg border-0 bg-gradient-to-br from-white to-gray-50">
               <CardHeader className="pb-8">
@@ -621,6 +624,7 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
           
           <TabsContent value="schedules" className="mt-8">
             <Card className="shadow-lg border-0 bg-gradient-to-br from-white to-gray-50">
