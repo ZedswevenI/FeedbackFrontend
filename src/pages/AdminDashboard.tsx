@@ -363,7 +363,7 @@ export default function AdminDashboard() {
         </div>
 
         <Tabs defaultValue={user && typeof user === 'object' && 'username' in user && String(user.username) === '72518' ? 'schedules' : 'analytics'} className="space-y-8">
-          <TabsList className="grid w-full grid-cols-2 lg:w-auto lg:grid-cols-2 h-12 p-1 bg-gray-100 rounded-xl">
+          <TabsList className={`grid w-full ${user && typeof user === 'object' && 'username' in user && String(user.username) === '72518' ? 'grid-cols-1' : 'grid-cols-2'} lg:w-auto h-12 p-1 bg-gray-100 rounded-xl`}>
             {!(user && typeof user === 'object' && 'username' in user && String(user.username) === '72518') && (
               <TabsTrigger value="analytics" className="flex items-center gap-2 h-10 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <FileText className="h-4 w-4" />
