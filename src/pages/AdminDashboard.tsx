@@ -430,7 +430,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="analytics-template" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="Select Template" />
                         </SelectTrigger>
-                        <SelectContent className="max-h-[300px]">
+                        <SelectContent className="max-h-[300px]" position="popper" sideOffset={4}>
                           {metadata?.templates?.map((t: { id: number; name: string }) => (
                             <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                           ))}
@@ -444,7 +444,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="analytics-staff" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="Select staff" />
                         </SelectTrigger>
-                        <SelectContent className="max-h-[300px]">
+                        <SelectContent className="max-h-[300px]" position="popper" sideOffset={4}>
                           <SelectItem value="all">All Staff</SelectItem>
                           {filteredStaff.map((s: { id: number; name: string }) => (
                             <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
