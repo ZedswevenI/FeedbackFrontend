@@ -63,7 +63,7 @@ export function useCreateSchedule() {
   });
 }
 
-export function useAnalytics(staffId: number | string, filters?: { batchIds?: string[]; phases?: string[]; subjectIds?: string[]; templateId?: string; fromDate?: string; toDate?: string }) {
+export function useAnalytics(staffId: number | string, filters?: { batchIds?: string[]; phases?: string[]; subjectIds?: string[]; templateId?: string; fromDate?: string; toDate?: string }, options?: { enabled?: boolean }) {
   const actualStaffId = staffId === "all" ? 0 : Number(staffId);
   const baseUrl = import.meta.env.VITE_API_BASE_URL;
   const path = `${baseUrl}/api/feedback/admin/analytics/${actualStaffId}`;
@@ -105,6 +105,6 @@ export function useAnalytics(staffId: number | string, filters?: { batchIds?: st
       console.log('Analytics data received:', data);
       return data || [];
     },
-    enabled: !!staffId && staffId !== "",
+    enabled: options?.enabled !== false && !!staffId && staffId !== "",
   });
 }

@@ -17,8 +17,8 @@ import * as XLSX from 'xlsx';
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
-  const { data: metadata } = useAdminMetadata();
-  const { data: schedules, refetch: refetchSchedules } = useSchedules();
+  const { data: metadata, isLoading: metadataLoading } = useAdminMetadata();
+  const { data: schedules, refetch: refetchSchedules, isLoading: schedulesLoading } = useSchedules();
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
@@ -39,6 +39,8 @@ export default function AdminDashboard() {
   const itemsPerPage = 10;
   const { toast } = useToast();
   
+  const isUser72518 = user && typeof user === 'object' && 'username' in user && String(user.username) === '72518';
+  
   const { data: analytics, refetch: refetchAnalytics } = useAnalytics(selectedStaffId, { 
     batchIds: selectedBatchIds,
     phases: selectedPhases,
@@ -46,7 +48,7 @@ export default function AdminDashboard() {
     templateId: selectedTemplate,
     fromDate: fromDate,
     toDate: toDate
-  });
+  }, { enabled: !isUser72518 });
 
   const handleSearch = () => {
     if (selectedStaffId) {
@@ -335,6 +337,17 @@ export default function AdminDashboard() {
     }
   };
 
+  if (metadataLoading || schedulesLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
@@ -362,9 +375,9 @@ export default function AdminDashboard() {
           <CreateScheduleDialog />
         </div>
 
-        <Tabs defaultValue={user && typeof user === 'object' && 'username' in user && String(user.username) === '72518' ? 'schedules' : 'analytics'} className="space-y-8">
-          <TabsList className={`grid w-full ${user && typeof user === 'object' && 'username' in user && String(user.username) === '72518' ? 'grid-cols-1' : 'grid-cols-2'} lg:w-auto h-12 p-1 bg-gray-100 rounded-xl`}>
-            {!(user && typeof user === 'object' && 'username' in user && String(user.username) === '72518') && (
+        <Tabs defaultValue={isUser72518 ? 'schedules' : 'analytics'} className="space-y-8">
+          <TabsList className={`grid w-full ${isUser72518 ? 'grid-cols-1' : 'grid-cols-2'} lg:w-auto h-12 p-1 bg-gray-100 rounded-xl`}>
+            {!isUser72518 && (
               <TabsTrigger value="analytics" className="flex items-center gap-2 h-10 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <FileText className="h-4 w-4" />
                 <span className="font-medium">Analytics Dashboard</span>
@@ -376,7 +389,7 @@ export default function AdminDashboard() {
             </TabsTrigger>
           </TabsList>
 
-          {!(user && typeof user === 'object' && 'username' in user && String(user.username) === '72518') && (
+          {!isUser72518 && (
           <TabsContent value="analytics" className="mt-8">
             <Card className="shadow-lg border-0 bg-gradient-to-br from-white to-gray-50">
               <CardHeader className="pb-8">
