@@ -35,15 +35,16 @@ export function MultiSelect({ options, selected, onSelectionChange, placeholder 
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0">
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 max-h-[300px]" align="start" side="bottom" sideOffset={4}>
         <Command>
-          <CommandInput placeholder="Search..." />
+          <CommandInput placeholder="Search..." className="h-9" />
           <CommandEmpty>No items found.</CommandEmpty>
-          <CommandGroup>
+          <CommandGroup className="max-h-[240px] overflow-y-auto">
             {options.map((option) => (
               <CommandItem
                 key={option.value}
                 onSelect={() => handleSelect(option.value)}
+                className="cursor-pointer"
               >
                 <Check
                   className={`mr-2 h-4 w-4 ${

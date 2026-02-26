@@ -430,7 +430,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="analytics-template" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="Select Template" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[300px]">
                           {metadata?.templates?.map((t: { id: number; name: string }) => (
                             <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                           ))}
@@ -444,7 +444,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="analytics-staff" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="Select staff" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[300px]">
                           <SelectItem value="all">All Staff</SelectItem>
                           {filteredStaff.map((s: { id: number; name: string }) => (
                             <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
@@ -530,14 +530,14 @@ export default function AdminDashboard() {
                               <TableHead className="text-white font-bold py-4 px-3 text-center w-24">Template</TableHead>
                               <TableHead className="text-white font-bold py-4 px-4 text-center">Batch<br/>Strength</TableHead>
                               <TableHead className="text-white font-bold py-4 px-4 text-center">Responses</TableHead>
+                              <TableHead className="text-white font-bold py-4 px-4 text-center bg-green-600">TEA%</TableHead>
+                              <TableHead className="text-white font-bold py-4 px-4 text-center bg-blue-600">REA%</TableHead>
                               {analytics[0].questionStats?.filter((q: any) => q.section === 'Part A' || !q.section).map((q: any, idx: number) => (
                                 <TableHead key={`a${idx+1}`} className="text-white font-bold py-4 px-3 text-center min-w-[60px]">A{idx+1}</TableHead>
                               ))}
                               {analytics[0].questionStats?.filter((q: any) => q.section === 'Part B').map((q: any, idx: number) => (
                                 <TableHead key={`b${idx+1}`} className="text-white font-bold py-4 px-3 text-center min-w-[60px]">B{idx+1}</TableHead>
                               ))}
-                              <TableHead className="text-white font-bold py-4 px-4 text-center bg-green-600">TEA%</TableHead>
-                              <TableHead className="text-white font-bold py-4 px-4 text-center bg-blue-600">REA%</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -559,14 +559,14 @@ export default function AdminDashboard() {
                                 </TableCell>
                                 <TableCell className="text-center py-4 px-4 font-bold text-gray-900">{batchAnalytics.batchStrength || 0}</TableCell>
                                 <TableCell className="text-center py-4 px-4 font-bold text-blue-700">{batchAnalytics.totalRespondents || 0}</TableCell>
+                                <TableCell className="text-center py-4 px-4 font-bold text-green-700 bg-green-50">{((batchAnalytics.partAAverage || 0) / 10 * 100).toFixed(1)}%</TableCell>
+                                <TableCell className="text-center py-4 px-4 font-bold text-blue-700 bg-blue-50">{((batchAnalytics.partBAverage || 0) / 10 * 100).toFixed(1)}%</TableCell>
                                 {batchAnalytics.questionStats?.filter((q: any) => q.section === 'Part A' || !q.section).map((q: any, idx: number) => (
                                   <TableCell key={`val-a${idx+1}`} className="text-center py-4 px-3 font-semibold text-gray-800">{q.averageMarks.toFixed(2)}</TableCell>
                                 ))}
                                 {batchAnalytics.questionStats?.filter((q: any) => q.section === 'Part B').map((q: any, idx: number) => (
                                   <TableCell key={`val-b${idx+1}`} className="text-center py-4 px-3 font-semibold text-gray-800">{q.averageMarks.toFixed(2)}</TableCell>
                                 ))}
-                                <TableCell className="text-center py-4 px-4 font-bold text-green-700 bg-green-50">{((batchAnalytics.partAAverage || 0) / 10 * 100).toFixed(1)}%</TableCell>
-                                <TableCell className="text-center py-4 px-4 font-bold text-blue-700 bg-blue-50">{((batchAnalytics.partBAverage || 0) / 10 * 100).toFixed(1)}%</TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -671,7 +671,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="schedule-batch" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Batches" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[300px]">
                           <SelectItem value="all">All Batches</SelectItem>
                           {metadata?.batches.map((b: string) => (
                             <SelectItem key={b} value={b}>{b}</SelectItem>
@@ -686,7 +686,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="schedule-phase" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Phases" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[300px]">
                           <SelectItem value="all">All Phases</SelectItem>
                           {[1,2,3,4,5,6,7,8,9,10,'R'].map(p => (
                             <SelectItem key={p} value={String(p)}>Phase {p}</SelectItem>
@@ -701,7 +701,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="schedule-subject" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Subjects" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[300px]">
                           <SelectItem value="all">All Subjects</SelectItem>
                           {metadata?.subjects?.map((sub: { id: number; name: string }) => (
                             <SelectItem key={sub.id} value={String(sub.id)}>{sub.name}</SelectItem>
@@ -716,7 +716,7 @@ export default function AdminDashboard() {
                         <SelectTrigger id="schedule-staff" className="h-11 border-2 border-gray-200 hover:border-blue-300 transition-colors">
                           <SelectValue placeholder="All Staff" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[300px]">
                           <SelectItem value="all">All Staff</SelectItem>
                           {metadata?.staff?.map((s: { id: number; name: string }) => (
                             <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>

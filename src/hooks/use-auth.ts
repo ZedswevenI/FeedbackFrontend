@@ -26,11 +26,11 @@ function saveSession(username: string, sessionData: SessionData) {
   const sessions = getAllSessions();
   sessions[username] = sessionData;
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-  sessionStorage.setItem(CURRENT_SESSION_KEY, username);
+  localStorage.setItem(CURRENT_SESSION_KEY, username);
 }
 
 function getCurrentSessionUsername(): string | null {
-  return sessionStorage.getItem(CURRENT_SESSION_KEY);
+  return localStorage.getItem(CURRENT_SESSION_KEY);
 }
 
 export function getToken(): string | null {
@@ -52,7 +52,7 @@ function clearToken() {
     delete sessions[currentUser];
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
   }
-  sessionStorage.removeItem(CURRENT_SESSION_KEY);
+  localStorage.removeItem(CURRENT_SESSION_KEY);
 }
 
 export function useAuth() {
